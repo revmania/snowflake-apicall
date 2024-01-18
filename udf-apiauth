@@ -1,0 +1,52 @@
+CREATE OR REPLACE NETWORK RULE API_NETWORK_RULE
+  MODE = EGRESS
+  TYPE = HOST_PORT
+  VALUE_LIST = ('api.globalcompany.com');
+  
+CREATE OR REPLACE SECRET  API_KEY
+    TYPE = GENERIC_STRING
+    SECRET_STRING = 'XxxyyY'
+    COMMENT = 'Value to return auth token from API';
+
+CREATE OR REPLACE SECRET  API_USERPW
+    TYPE = PASSWORD
+    USERNAME = 'api-username'
+    PASSWORD = 'password'
+    COMMENT = 'Username and password to return auth token from API';
+
+CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION API_INTEGRATION
+ALLOWED_NETWORK_RULES = (API_NETWORK_RULE)
+ALLOWED_AUTHENTICATION_SECRETS = (API_KEY, API_USERPW)
+  ENABLED = true;
+
+CREATE OR REPLACE FUNCTION API_AUTH() returns
+VARIANT
+LANGUAGE PYTHON
+RUNTIME_VERSION = 3.10
+HANDLER = 'ApiAuth'
+SECRETS = ('x-api-key' = API_KEY, 'userpass' =  API_USERPW)
+EXTERNAL_ACCESS_INTEGRATIONS = (API_INTEGRATION)
+PACKAGES = ('requests', 'snowflake-snowpark-python')
+AS
+$$
+import _snowflake
+import snowflake.snowpark as snowpark
+from snowflake.snowpark.functions import col
+import requests
+
+def ApiAuth():
+    username_password_object = _snowflake.get_username_password('userpass');
+    url = "https://api.globalcompany.com/admin/auth"
+    payload = {
+        "username": ""+ username_password_object.username +"",
+        "password": ""+ username_password_object.password +""
+    }
+    secret_apikey = _snowflake.get_generic_secret_string('x-api-key')
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "x-api-key": secret_apikey
+    }
+    access_token = requests.post(url, json=payload, headers=headers).json()
+    return access_token
+$$;
